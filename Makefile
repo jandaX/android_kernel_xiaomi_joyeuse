@@ -421,12 +421,20 @@ LINUXINCLUDE    := \
 		-I$(objtree)/include \
 		$(USERINCLUDE)
 
+REGR_FIXFLAGS   =  --param=max-inline-insns-auto=1000 \
+		   --param=inline-min-speedup=15 \
+		   --param=max-inline-insns-single=200 \
+		   --param=max-inline-insns-auto=30 \
+		   --param=early-inlining-insns=14
+
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -std=gnu89
+		   -std=gnu89 -ffast-math \
+		   -O3 $(REGR_FIXFLAGS)
+
 ifeq ($(TARGET_BOARD_TYPE),auto)
 KBUILD_CFLAGS    += -DCONFIG_PLATFORM_AUTO
 endif
@@ -435,11 +443,11 @@ ifeq ($(CONFIG_EARLY_INIT),true)
 KBUILD_CFLAGS    += -DCONFIG_EARLY_SERVICES
 endif
 
-KBUILD_CPPFLAGS := -D__KERNEL__
+KBUILD_CPPFLAGS := -D__KERNEL__ -O3
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS_MODULE  := -DMODULE
-KBUILD_CFLAGS_MODULE  := -DMODULE
+KBUILD_CFLAGS_MODULE  := -DMODULE -O3
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 GCC_PLUGINS_CFLAGS :=
 CLANG_FLAGS :=
@@ -697,16 +705,22 @@ ARCH_AFLAGS :=
 ARCH_CFLAGS :=
 include arch/$(SRCARCH)/Makefile
 
-KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
-KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
+KBUILD_CFLAGS	+= $(call cc-option, -fno-delete-null-pointer-checks,)
+KBUILD_CFLAGS   += $(call cc-option, -fcatch-undefined-behavior)
+KBUILD_CFLAGS   += $(call cc-option, -no-integrated-as)
+KBUILD_CFLAGS	+= $(call cc-option, -Wno-misleading-indentation)
+KBUILD_CFLAGS	+= $(call cc-option, -Wno-error=unused-variable)
+KBUILD_CFLAGS	+= $(call cc-option, -Wno-error=maybe-uninitialized)
+
+KBUILD_CFLAGS	+= $(call cc-disable-warning, frame-address,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, attribute-alias)
 
-KBUILD_CFLAGS   += -march=armv8.2-a -mtune=cortex-a55 -mcpu=cortex-a55 -Wa,-mcpu=cortex-a55
-KBUILD_AFLAGS   += -Wa,-mcpu=cortex-a55
+KBUILD_CFLAGS   += -march=armv8.2-a -mtune=cortex-a76.cortex-a55
+KBUILD_AFLAGS   += -march=armv8.2-a -mtune=cortex-a76.cortex-a55
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS   += -Os
@@ -1038,10 +1052,6 @@ endif
 
 ifeq ($(CONFIG_STRIP_ASM_SYMS),y)
 LDFLAGS_vmlinux	+= $(call ld-option, -X,)
-endif
-
-ifeq ($(CONFIG_RELR),y)
-LDFLAGS_vmlinux	+= --pack-dyn-relocs=relr
 endif
 
 # Default kernel image to build when no specific target is given.
