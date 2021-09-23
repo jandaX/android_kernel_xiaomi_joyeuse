@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.14.246 Kernel Configuration
+# Linux/arm64 4.14.247 Kernel Configuration
 #
 CONFIG_ARM64=y
 CONFIG_64BIT=y
@@ -2141,7 +2141,7 @@ CONFIG_CNSS_GENL=y
 #
 CONFIG_INPUT=y
 CONFIG_INPUT_LEDS=y
-# CONFIG_INPUT_FF_MEMLESS is not set
+CONFIG_INPUT_FF_MEMLESS=y
 # CONFIG_INPUT_POLLDEV is not set
 # CONFIG_INPUT_SPARSEKMAP is not set
 # CONFIG_INPUT_MATRIXKMAP is not set
@@ -5545,7 +5545,6 @@ CONFIG_MESSAGE_LOGLEVEL_DEFAULT=4
 # CONFIG_BOOT_PRINTK_DELAY is not set
 # CONFIG_DYNAMIC_DEBUG is not set
 # CONFIG_DEBUG_MODULE_LOAD_INFO is not set
-# CONFIG_DEBUG_CONSOLE_UNHASHED_POINTERS is not set
 
 #
 # Compile-time checks and compiler options
