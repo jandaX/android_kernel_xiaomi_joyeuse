@@ -2706,7 +2706,6 @@ static struct hlist_head *orphan_list[] = {
 
 static void clk_state_subtree(struct clk_core *c)
 {
-	int vdd_level = 0;
 	struct clk_core *child;
 
 	if (!c)
