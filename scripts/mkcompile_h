@@ -55,8 +55,13 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
-LINUX_COMPILE_BY="Curse"
-LINUX_COMPILE_HOST="Rudy's-Server"
+if [ "$USER" == "curse" ]; then
+    LINUX_COMPILE_BY="Curse"
+    LINUX_COMPILE_HOST="Rudy's-Server"
+else
+    LINUX_COMPILE_BY="MaximumSlav"
+    LINUX_COMPILE_HOST="GengKapak"
+fi
 
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
