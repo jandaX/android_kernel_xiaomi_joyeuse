@@ -1107,7 +1107,7 @@ int fuse_allow_current_process(struct fuse_conn *fc)
 	const struct cred *cred;
 
 	if (fc->allow_other)
-		return current_in_userns(fc->user_ns);
+		return 1;
 
 	cred = current_cred();
 	if (uid_eq(cred->euid, fc->user_id) &&
