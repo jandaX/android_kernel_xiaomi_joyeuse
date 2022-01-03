@@ -175,8 +175,8 @@ void fuse_change_attributes_common(struct inode *inode, struct fuse_attr *attr,
 	inode->i_ino     = fuse_squash_ino(attr->ino);
 	inode->i_mode    = (inode->i_mode & S_IFMT) | (attr->mode & 07777);
 	set_nlink(inode, attr->nlink);
-	inode->i_uid     = make_kuid(fc->user_ns, attr->uid);
-	inode->i_gid     = make_kgid(fc->user_ns, attr->gid);
+	inode->i_uid     = make_kuid(&init_user_ns, attr->uid);
+	inode->i_gid     = make_kgid(&init_user_ns, attr->gid);
 	inode->i_blocks  = attr->blocks;
 	inode->i_atime.tv_sec   = attr->atime;
 	inode->i_atime.tv_nsec  = attr->atimensec;
@@ -484,8 +484,7 @@ static int fuse_match_uint(substring_t *s, unsigned int *res)
 	return err;
 }
 
-static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
-			  struct user_namespace *user_ns)
+static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev)
 {
 	char *p;
 	memset(d, 0, sizeof(struct fuse_mount_data));
@@ -521,7 +520,7 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 		case OPT_USER_ID:
 			if (fuse_match_uint(&args[0], &uv))
 				return 0;
-			d->user_id = make_kuid(user_ns, uv);
+			d->user_id = make_kuid(current_user_ns(), uv);
 			if (!uid_valid(d->user_id))
 				return 0;
 			d->user_id_present = 1;
@@ -530,7 +529,7 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 		case OPT_GROUP_ID:
 			if (fuse_match_uint(&args[0], &uv))
 				return 0;
-			d->group_id = make_kgid(user_ns, uv);
+			d->group_id = make_kgid(current_user_ns(), uv);
 			if (!gid_valid(d->group_id))
 				return 0;
 			d->group_id_present = 1;
@@ -573,8 +572,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 	struct super_block *sb = root->d_sb;
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
 
-	seq_printf(m, ",user_id=%u", from_kuid_munged(fc->user_ns, fc->user_id));
-	seq_printf(m, ",group_id=%u", from_kgid_munged(fc->user_ns, fc->group_id));
+	seq_printf(m, ",user_id=%u", from_kuid_munged(&init_user_ns, fc->user_id));
+	seq_printf(m, ",group_id=%u", from_kgid_munged(&init_user_ns, fc->group_id));
 	if (fc->default_permissions)
 		seq_puts(m, ",default_permissions");
 	if (fc->allow_other)
@@ -605,7 +604,7 @@ static void fuse_pqueue_init(struct fuse_pqueue *fpq)
 	fpq->connected = 1;
 }
 
-void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
+void fuse_conn_init(struct fuse_conn *fc)
 {
 	memset(fc, 0, sizeof(*fc));
 	spin_lock_init(&fc->lock);
@@ -629,7 +628,6 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 	fc->attr_version = 1;
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
 	fc->pid_ns = get_pid_ns(task_active_pid_ns(current));
-	fc->user_ns = get_user_ns(user_ns);
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
@@ -639,7 +637,6 @@ void fuse_conn_put(struct fuse_conn *fc)
 		if (fc->destroy_req)
 			fuse_request_free(fc->destroy_req);
 		put_pid_ns(fc->pid_ns);
-		put_user_ns(fc->user_ns);
 		fc->release(fc);
 	}
 }
@@ -1081,7 +1078,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_flags &= ~(MS_NOSEC | SB_I_VERSION);
 
-	if (!parse_fuse_opt(data, &d, is_bdev, sb->s_user_ns))
+	if (!parse_fuse_opt(data, &d, is_bdev))
 		goto err;
 
 	if (is_bdev) {
@@ -1106,12 +1103,8 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	if (!file)
 		goto err;
 
-	/*
-	 * Require mount to happen from the same user namespace which
-	 * opened /dev/fuse to prevent potential attacks.
-	 */
-	if (file->f_op != &fuse_dev_operations ||
-	    file->f_cred->user_ns != sb->s_user_ns)
+	if ((file->f_op != &fuse_dev_operations) ||
+	    (file->f_cred->user_ns != &init_user_ns))
 		goto err_fput;
 
 	fc = kmalloc(sizeof(*fc), GFP_KERNEL);
@@ -1119,7 +1112,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	if (!fc)
 		goto err_fput;
 
-	fuse_conn_init(fc, sb->s_user_ns);
+	fuse_conn_init(fc);
 	fc->release = fuse_free_conn;
 
 	fud = fuse_dev_alloc(fc);
