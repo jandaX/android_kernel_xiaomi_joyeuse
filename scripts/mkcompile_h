@@ -71,7 +71,7 @@ UTS_VERSION="$UTS_VERSION $CONFIG_FLAGS $TIMESTAMP"
 
 # Truncate to maximum length
 
-UTS_LEN=128
+UTS_LEN=64
 UTS_TRUNCATE="cut -b -$UTS_LEN"
 
 # Generate a temporary compile.h
