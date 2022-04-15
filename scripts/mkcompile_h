@@ -55,7 +55,7 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
-if [ "$USER" == "ubuntu" ]; then
+if [ "$USER" == "curse" ]; then
     LINUX_COMPILE_BY="Curse"
     LINUX_COMPILE_HOST="Rudy's-Server"
 else
