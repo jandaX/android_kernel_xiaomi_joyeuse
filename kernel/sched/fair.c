@@ -6728,28 +6728,39 @@ static int wake_wide(struct task_struct *p, int sibling_count_hint)
  * soonest. For the purpose of speed we only consider the waking and previous
  * CPU.
  *
- * wake_affine_idle() - only considers 'now', it check if the waking CPU is (or
- *			will be) idle.
+ * wake_affine_idle() - only considers 'now', it check if the waking CPU is
+ *			cache-affine and is (or	will be) idle.
  *
  * wake_affine_weight() - considers the weight to reflect the average
  *			  scheduling latency of the CPUs. This seems to work
  *			  for the overloaded case.
  */
 
-static bool
-wake_affine_idle(struct sched_domain *sd, struct task_struct *p,
-		 int this_cpu, int prev_cpu, int sync)
+static int
+wake_affine_idle(int this_cpu, int prev_cpu, int sync)
 {
-	if (idle_cpu(this_cpu))
-		return true;
+	/*
+	 * If this_cpu is idle, it implies the wakeup is from interrupt
+	 * context. Only allow the move if cache is shared. Otherwise an
+	 * interrupt intensive workload could force all tasks onto one
+	 * node depending on the IO topology or IRQ affinity settings.
+	 *
+	 * If the prev_cpu is idle and cache affine then avoid a migration.
+	 * There is no guarantee that the cache hot data from an interrupt
+	 * is more important than cache hot data on the prev_cpu and from
+	 * a cpufreq perspective, it's better to have higher utilisation
+	 * on one CPU.
+	 */
+	if (idle_cpu(this_cpu) && cpus_share_cache(this_cpu, prev_cpu))
+		return idle_cpu(prev_cpu) ? prev_cpu : this_cpu;
 
 	if (sync && cpu_rq(this_cpu)->nr_running == 1)
-		return true;
+		return this_cpu;
 
-	return false;
+	return nr_cpumask_bits;
 }
 
-static bool
+static int
 wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 		   int this_cpu, int prev_cpu, int sync)
 {
@@ -6757,13 +6768,12 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 	unsigned long task_load;
 
 	this_eff_load = target_load(this_cpu, sd->wake_idx);
-	prev_eff_load = source_load(prev_cpu, sd->wake_idx);
 
 	if (sync) {
 		unsigned long current_load = task_h_load(current);
 
 		if (current_load > this_eff_load)
-			return true;
+			return this_cpu;
 
 		this_eff_load -= current_load;
 	}
@@ -6775,33 +6785,43 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 		this_eff_load *= 100;
 	this_eff_load *= capacity_of(prev_cpu);
 
+	prev_eff_load = source_load(prev_cpu, sd->wake_idx);
 	prev_eff_load -= task_load;
 	if (sched_feat(WA_BIAS))
 		prev_eff_load *= 100 + (sd->imbalance_pct - 100) / 2;
 	prev_eff_load *= capacity_of(this_cpu);
 
-	return this_eff_load <= prev_eff_load;
+	/*
+	 * If sync, adjust the weight of prev_eff_load such that if
+	 * prev_eff == this_eff that select_idle_sibling() will consider
+	 * stacking the wakee on top of the waker if no other CPU is
+	 * idle.
+	 */
+	if (sync)
+		prev_eff_load += 1;
+
+	return this_eff_load < prev_eff_load ? this_cpu : nr_cpumask_bits;
 }
 
 static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 		       int prev_cpu, int sync)
 {
 	int this_cpu = smp_processor_id();
-	bool affine = false;
+	int target = nr_cpumask_bits;
 
-	if (sched_feat(WA_IDLE) && !affine)
-		affine = wake_affine_idle(sd, p, this_cpu, prev_cpu, sync);
+	if (sched_feat(WA_IDLE))
+		target = wake_affine_idle(this_cpu, prev_cpu, sync);
 
-	if (sched_feat(WA_WEIGHT) && !affine)
-		affine = wake_affine_weight(sd, p, this_cpu, prev_cpu, sync);
+	if (sched_feat(WA_WEIGHT) && target == nr_cpumask_bits)
+		target = wake_affine_weight(sd, p, this_cpu, prev_cpu, sync);
 
 	schedstat_inc(p->se.statistics.nr_wakeups_affine_attempts);
-	if (affine) {
-		schedstat_inc(sd->ttwu_move_affine);
-		schedstat_inc(p->se.statistics.nr_wakeups_affine);
-	}
+	if (target == nr_cpumask_bits)
+		return prev_cpu;
 
-	return affine;
+	schedstat_inc(sd->ttwu_move_affine);
+	schedstat_inc(p->se.statistics.nr_wakeups_affine);
+	return target;
 }
 
 #ifdef CONFIG_SCHED_TUNE
@@ -7090,7 +7110,7 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 			}
 		} else if (shallowest_idle_cpu == -1) {
 			load = weighted_cpuload(cpu_rq(i));
-			if (load < min_load || (load == min_load && i == this_cpu)) {
+			if (load < min_load) {
 				min_load = load;
 				least_loaded_cpu = i;
 			}
@@ -7107,6 +7127,13 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 
 	if (!cpumask_intersects(sched_domain_span(sd), &p->cpus_allowed))
 		return prev_cpu;
+
+	/*
+	 * We need task's util for capacity_spare_wake, sync it up to prev_cpu's
+	 * last_update_time.
+	 */
+	if (sd && !(sd_flag & SD_BALANCE_FORK))
+		sync_entity_load_avg(&p->se);
 
 	while (sd) {
 		struct sched_group *group;
@@ -8576,7 +8603,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 
 		if (sysctl_sched_sync_hint_enable && sync &&
 				_cpus_allowed &&
-				wake_affine_idle(sd, p, cpu, prev_cpu, sync) &&
+				wake_affine_idle(cpu, prev_cpu, sync) &&
 				cpu_is_in_target_set(p, cpu)) {
 			rcu_read_unlock();
 			return cpu;
@@ -8627,17 +8654,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		if (cpu == prev_cpu)
 			goto pick_cpu;
 
-		if (wake_affine(affine_sd, p, prev_cpu, sync))
-			new_cpu = cpu;
-	}
-
-	if (sd && !(sd_flag & SD_BALANCE_FORK)) {
-		/*
-		 * We're going to need the task's util for capacity_spare_without
-		 * in find_idlest_group. Sync it up to prev_cpu's
-		 * last_update_time.
-		 */
-		sync_entity_load_avg(&p->se);
+		new_cpu = wake_affine(affine_sd, p, prev_cpu, sync);
 	}
 
 	if (!sd) {
@@ -8681,6 +8698,8 @@ pick_cpu:
 	return new_cpu;
 }
 
+static void detach_entity_cfs_rq(struct sched_entity *se);
+
 /*
  * Called immediately before a task is migrated to a new cpu; task_cpu(p) and
  * cfs_rq_of(p) references at time of call are still valid and identify the
@@ -8714,14 +8733,25 @@ static void migrate_task_rq_fair(struct task_struct *p)
 		se->vruntime -= min_vruntime;
 	}
 
-	/*
-	 * We are supposed to update the task to "current" time, then its up to date
-	 * and ready to go to new CPU/cfs_rq. But we have difficulty in getting
-	 * what current time is, so simply throw away the out-of-date time. This
-	 * will result in the wakee task is less decayed, but giving the wakee more
-	 * load sounds not bad.
-	 */
-	remove_entity_load_avg(&p->se);
+	if (p->on_rq == TASK_ON_RQ_MIGRATING) {
+		/*
+		 * In case of TASK_ON_RQ_MIGRATING we in fact hold the 'old'
+		 * rq->lock and can modify state directly.
+		 */
+		lockdep_assert_held(&task_rq(p)->lock);
+		detach_entity_cfs_rq(&p->se);
+
+	} else {
+		/*
+		 * We are supposed to update the task to "current" time, then
+		 * its up to date and ready to go to new CPU/cfs_rq. But we
+		 * have difficulty in getting what current time is, so simply
+		 * throw away the out-of-date time. This will result in the
+		 * wakee task is less decayed, but giving the wakee more load
+		 * sounds not bad.
+		 */
+		remove_entity_load_avg(&p->se);
+	}
 
 	/* Tell new CPU we are migrated */
 	p->se.avg.last_update_time = 0;
@@ -8989,12 +9019,7 @@ again:
 		set_next_entity(cfs_rq, se);
 	}
 
-	if (hrtick_enabled(rq))
-		hrtick_start_fair(rq, p);
-
-	update_misfit_status(p, rq);
-
-	return p;
+	goto done;
 simple:
 #endif
 
@@ -9007,6 +9032,16 @@ simple:
 	} while (cfs_rq);
 
 	p = task_of(se);
+
+done: __maybe_unused
+#ifdef CONFIG_SMP
+	/*
+	 * Move the next running task to the front of
+	 * the list, so our cfs_tasks list becomes MRU
+	 * one.
+	 */
+	list_move(&p->se.group_node, &rq->cfs_tasks);
+#endif
 
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
@@ -9497,11 +9532,12 @@ static void detach_task(struct task_struct *p, struct lb_env *env)
  */
 static struct task_struct *detach_one_task(struct lb_env *env)
 {
-	struct task_struct *p, *n;
+	struct task_struct *p;
 
 	lockdep_assert_held(&env->src_rq->lock);
 
-	list_for_each_entry_safe(p, n, &env->src_rq->cfs_tasks, se.group_node) {
+	list_for_each_entry_reverse(p,
+			&env->src_rq->cfs_tasks, se.group_node) {
 		if (!can_migrate_task(p, env))
 			continue;
 
@@ -9555,7 +9591,7 @@ redo:
 		if (env->idle != CPU_NOT_IDLE && env->src_rq->nr_running <= 1)
 			break;
 
-		p = list_first_entry(tasks, struct task_struct, se.group_node);
+		p = list_last_entry(tasks, struct task_struct, se.group_node);
 
 		env->loop++;
 		/* We've more or less seen every task there is, call it quits */
@@ -9616,7 +9652,7 @@ next:
 		trace_sched_load_balance_skip_tasks(env->src_cpu, env->dst_cpu,
 				env->src_grp_type, p->pid, load, task_util(p),
 				cpumask_bits(&p->cpus_allowed)[0]);
-		list_move_tail(&p->se.group_node, tasks);
+		list_move(&p->se.group_node, tasks);
 	}
 
 	if (env->flags & (LBF_IGNORE_BIG_TASKS |
@@ -10520,6 +10556,19 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 		    group_has_capacity(env, local) &&
 		    (sgs->sum_nr_running > local->sum_nr_running + 1)) {
 			sgs->group_no_capacity = 1;
+			sgs->group_type = group_classify(sg, sgs);
+		}
+
+		/*
+		 * Disallow moving tasks from asym cap sibling CPUs to other
+		 * CPUs (lower capacity) unless the asym cap sibling group has
+		 * no capacity to manage the current load.
+		 */
+		if ((env->sd->flags & SD_ASYM_CPUCAPACITY) &&
+			sgs->group_no_capacity &&
+			asym_cap_sibling_group_has_capacity(env->dst_cpu,
+						env->sd->imbalance_pct)) {
+			sgs->group_no_capacity = 0;
 			sgs->group_type = group_classify(sg, sgs);
 		}
 
