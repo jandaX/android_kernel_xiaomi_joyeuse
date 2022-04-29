@@ -296,6 +296,7 @@ struct dirty_seglist_info {
 	unsigned long *victim_secmap;		/* background GC victims */
 	unsigned long *pinned_secmap;		/* pinned victims from foreground GC */
 	unsigned int pinned_secmap_cnt;		/* count of victims which has pinned data */
+	bool enable_pin_section;		/* enable pinning section */
 };
 
 /* victim selection function for cleaning and SSR */
