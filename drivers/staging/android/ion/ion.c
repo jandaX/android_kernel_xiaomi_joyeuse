@@ -120,7 +120,9 @@ static void *ion_buffer_kmap_get(struct ion_buffer *buffer)
 
 	mutex_lock(&buffer->kmap_lock);
 	if (buffer->kmap_cnt) {
-		vaddr = buffer->vaddr;
+		if (buffer->kmap_cnt == INT_MAX)
+			return ERR_PTR(-EOVERFLOW);
+
 		buffer->kmap_cnt++;
 	} else {
 		vaddr = buffer->heap->ops->map_kernel(buffer->heap, buffer);
