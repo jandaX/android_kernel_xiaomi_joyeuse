@@ -110,6 +110,8 @@ struct npu_host_ctx {
 	int32_t fw_ref_cnt;
 	int32_t npu_init_cnt;
 	int32_t power_vote_num;
+	struct work_struct ipc_irq_work;
+	struct work_struct wdg_err_irq_work;
 	struct work_struct bridge_mbox_work;
 	struct work_struct load_fw_work;
 	struct work_struct update_pwr_work;
