@@ -153,11 +153,17 @@ static const char * const npu_require_reset_clocks[] = {
 
 static const struct npu_irq npu_irq_info[] = {
 	{"ipc_irq", 0, IRQF_TRIGGER_RISING | IRQF_ONESHOT, npu_ipc_intr_hdlr},
-	{"general_irq", 0,  IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
-		npu_general_intr_hdlr},
+	{"general_irq", 0,  IRQF_TRIGGER_HIGH | IRQF_ONESHOT, NULL},
 	{"error_irq", 0,  IRQF_TRIGGER_HIGH | IRQF_ONESHOT, npu_err_intr_hdlr},
 	{"wdg_bite_irq", 0,  IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 		npu_wdg_intr_hdlr}
+};
+
+static const struct npu_thrd_irq npu_thrd_irq_info[] = {
+        { npu_ipc_intr_thrd_hdlr },
+        { npu_general_intr_thrd_hdlr },
+        { npu_err_intr_thrd_hdlr },
+        { npu_wdg_intr_thrd_hdlr }
 };
 
 static struct npu_device *g_npu_dev;
@@ -1909,6 +1915,7 @@ static int npu_irq_init(struct npu_device *npu_dev)
 	int ret = 0, i;
 
 	memcpy(npu_dev->irq, npu_irq_info, sizeof(npu_irq_info));
+	memcpy(npu_dev->thrd_irq, npu_thrd_irq_info, sizeof(npu_thrd_irq_info));
 	for (i = 0; i < ARRAY_SIZE(npu_irq_info); i++) {
 		irq_type = npu_irq_info[i].irq_type;
 		npu_dev->irq[i].irq = platform_get_irq_byname(
@@ -1924,10 +1931,10 @@ static int npu_irq_init(struct npu_device *npu_dev)
 			npu_dev->irq[i].irq);
 		irq_set_status_flags(npu_dev->irq[i].irq,
 						IRQ_NOAUTOEN);
-		ret = devm_request_irq(&npu_dev->pdev->dev,
+		ret = devm_request_threaded_irq(&npu_dev->pdev->dev,
 				npu_dev->irq[i].irq, npu_dev->irq[i].handler,
-				irq_type, npu_dev->irq[i].name,
-				npu_dev);
+				npu_dev->thrd_irq[i].handler, irq_type,
+				npu_dev->irq[i].name, npu_dev);
 		if (ret) {
 			NPU_ERR("devm_request_irq(%s:%d) failed\n",
 				npu_dev->irq[i].name,

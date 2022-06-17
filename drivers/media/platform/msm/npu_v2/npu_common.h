@@ -223,6 +223,10 @@ struct npu_irq {
 	irq_handler_t handler;
 };
 
+struct npu_thrd_irq {
+	irq_handler_t handler;
+};
+
 struct npu_io_data {
 	size_t size;
 	phys_addr_t phy_addr;
@@ -274,6 +278,7 @@ struct npu_device {
 	struct npu_regulator regulators[NPU_MAX_DT_NAME_LEN];
 
 	struct npu_irq irq[NPU_MAX_IRQ];
+	struct npu_thrd_irq thrd_irq[NPU_MAX_IRQ];
 	bool irq_enabled;
 
 	struct device *cb_device;
@@ -326,9 +331,12 @@ int npu_enable_post_pil_clocks(struct npu_device *npu_dev);
 void npu_disable_post_pil_clocks(struct npu_device *npu_dev);
 
 irqreturn_t npu_ipc_intr_hdlr(int irq, void *ptr);
-irqreturn_t npu_general_intr_hdlr(int irq, void *ptr);
+irqreturn_t npu_ipc_intr_thrd_hdlr(int irq, void *ptr);
+irqreturn_t npu_general_intr_thrd_hdlr(int irq, void *ptr);
 irqreturn_t npu_err_intr_hdlr(int irq, void *ptr);
+irqreturn_t npu_err_intr_thrd_hdlr(int irq, void *ptr);
 irqreturn_t npu_wdg_intr_hdlr(int irq, void *ptr);
+irqreturn_t npu_wdg_intr_thrd_hdlr(int irq, void *ptr);
 
 int npu_set_uc_power_level(struct npu_device *npu_dev,
 	uint32_t pwr_level);

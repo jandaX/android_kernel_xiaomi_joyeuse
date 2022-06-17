@@ -37,8 +37,6 @@
  * File Scope Function Prototypes
  * -------------------------------------------------------------------------
  */
-static void npu_ipc_irq_work(struct work_struct *work);
-static void npu_wdg_err_irq_work(struct work_struct *work);
 static void npu_bridge_mbox_work(struct work_struct *work);
 static void npu_disable_fw_work(struct work_struct *work);
 static void npu_update_pwr_work(struct work_struct *work);
@@ -829,8 +827,6 @@ int npu_host_init(struct npu_device *npu_dev)
 		ret = -ENOMEM;
 		goto fail;
 	} else {
-		INIT_WORK(&host_ctx->ipc_irq_work, npu_ipc_irq_work);
-		INIT_WORK(&host_ctx->wdg_err_irq_work, npu_wdg_err_irq_work);
 		INIT_WORK(&host_ctx->bridge_mbox_work, npu_bridge_mbox_work);
 		INIT_WORK(&host_ctx->load_fw_work, npu_load_fw_work);
 		INIT_WORK(&host_ctx->update_pwr_work, npu_update_pwr_work);
@@ -915,18 +911,24 @@ void npu_host_deinit(struct npu_device *npu_dev)
 irqreturn_t npu_ipc_intr_hdlr(int irq, void *ptr)
 {
 	struct npu_device *npu_dev = (struct npu_device *)ptr;
-	struct npu_host_ctx *host_ctx = &npu_dev->host_ctx;
 
 	INTERRUPT_ACK(npu_dev, irq);
 
-	/* Check that the event thread currently is running */
-	if (host_ctx->wq)
-		queue_work(host_ctx->wq_pri, &host_ctx->ipc_irq_work);
+	return IRQ_WAKE_THREAD;
+}
 
+irqreturn_t npu_ipc_intr_thrd_hdlr(int irq, void *ptr)
+{
+	struct npu_device *npu_dev = (struct npu_device *)ptr;
+
+	if (!host_error_hdlr(npu_dev, false)) {
+		host_session_log_hdlr(npu_dev);
+		host_session_msg_hdlr(npu_dev);
+	}
 	return IRQ_HANDLED;
 }
 
-irqreturn_t npu_general_intr_hdlr(int irq, void *ptr)
+irqreturn_t npu_general_intr_thrd_hdlr(int irq, void *ptr)
 {
 	uint32_t reg_val, ack_val;
 	struct npu_device *npu_dev = (struct npu_device *)ptr;
@@ -969,8 +971,14 @@ irqreturn_t npu_err_intr_hdlr(int irq, void *ptr)
 		host_ctx->err_irq_sts);
 	NPU_ERR("err_irq_sts %x\n", host_ctx->err_irq_sts);
 
-	if (host_ctx->wq)
-		queue_work(host_ctx->wq_pri, &host_ctx->wdg_err_irq_work);
+	return IRQ_WAKE_THREAD;
+}
+
+irqreturn_t npu_err_intr_thrd_hdlr(int irq, void *ptr)
+{
+	struct npu_device *npu_dev = (struct npu_device *)ptr;
+
+	host_error_hdlr(npu_dev, false);
 
 	return IRQ_HANDLED;
 }
@@ -984,8 +992,14 @@ irqreturn_t npu_wdg_intr_hdlr(int irq, void *ptr)
 		NPU_CC_NPU_MASTERn_WDOG_BITE_IRQ_STATUS(0));
 	NPU_ERR("wdg_irq_sts %x\n", host_ctx->wdg_irq_sts);
 
-	if (host_ctx->wq)
-		queue_work(host_ctx->wq_pri, &host_ctx->wdg_err_irq_work);
+	return IRQ_WAKE_THREAD;
+}
+
+irqreturn_t npu_wdg_intr_thrd_hdlr(int irq, void *ptr)
+{
+	struct npu_device *npu_dev = (struct npu_device *)ptr;
+
+	host_error_hdlr(npu_dev, false);
 
 	return IRQ_HANDLED;
 }
@@ -1129,29 +1143,6 @@ fw_start_done:
 	mutex_unlock(&host_ctx->lock);
 
 	return ret;
-}
-
-static void npu_ipc_irq_work(struct work_struct *work)
-{
-	struct npu_host_ctx *host_ctx;
-	struct npu_device *npu_dev;
-
-	host_ctx = container_of(work, struct npu_host_ctx, ipc_irq_work);
-	npu_dev = container_of(host_ctx, struct npu_device, host_ctx);
-
-	host_session_log_hdlr(npu_dev);
-	host_session_msg_hdlr(npu_dev);
-}
-
-static void npu_wdg_err_irq_work(struct work_struct *work)
-{
-	struct npu_host_ctx *host_ctx;
-	struct npu_device *npu_dev;
-
-	host_ctx = container_of(work, struct npu_host_ctx, wdg_err_irq_work);
-	npu_dev = container_of(host_ctx, struct npu_device, host_ctx);
-
-	host_error_hdlr(npu_dev, false);
 }
 
 static void npu_disable_fw_work(struct work_struct *work)
