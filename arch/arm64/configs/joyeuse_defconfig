@@ -6096,13 +6096,3 @@ CONFIG_MACH_XIAOMI_ATOLL=y
 # Xiaomi board selection
 #
 CONFIG_MACH_XIAOMI_CUST=y
-
-#
-# Tech packages
-#
-
-#
-# RmNet extensions
-#
-CONFIG_RMNET_PERF=y
-CONFIG_RMNET_SHS=y
