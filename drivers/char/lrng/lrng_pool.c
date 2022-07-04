@@ -195,10 +195,10 @@ bool lrng_state_operational(void)
 }
 
 /* Policy to check whether entropy buffer contains full seeded entropy */
-bool lrng_fully_seeded(bool fully_seeded, struct entropy_buf *eb)
+bool lrng_fully_seeded(struct entropy_buf *eb)
 {
 	return ((eb->a_bits + eb->b_bits + eb->c_bits + eb->d_bits) >=
-		lrng_get_seed_entropy_osr(fully_seeded));
+		lrng_get_seed_entropy_osr());
 }
 
 /* Mark one DRNG as not fully seeded */
@@ -226,13 +226,9 @@ void lrng_unset_fully_seeded(struct lrng_drng *drng)
 /* Policy to enable LRNG operational mode */
 static inline void lrng_set_operational(u32 external_es)
 {
-	/* LRNG is operational if the initial DRNG is fully seeded ... */
 	if (lrng_state.lrng_fully_seeded &&
-	    /* ... and either internal ES SP800-90B startup is complete ... */
 	    (lrng_sp80090b_startup_complete() ||
-	    /* ... or the external ES provided sufficient entropy. */
-	     (lrng_get_seed_entropy_osr(lrng_state_fully_seeded()) <=
-	      external_es))) {
+	     (lrng_get_seed_entropy_osr() <= external_es))) {
 		lrng_state.lrng_operational = true;
 		lrng_process_ready_list();
 		lrng_init_wakeup();
@@ -282,8 +278,7 @@ void lrng_init_ops(struct entropy_buf *eb)
 	if (state->lrng_operational)
 		return;
 
-	requested_bits = lrng_get_seed_entropy_osr(
-					state->all_online_numa_node_seeded);
+	requested_bits = lrng_get_seed_entropy_osr();
 
 	/*
 	 * Entropy provided by external entropy sources - if they provide
@@ -296,7 +291,7 @@ void lrng_init_ops(struct entropy_buf *eb)
 	if (state->lrng_fully_seeded) {
 		lrng_set_operational(external_es);
 		lrng_set_entropy_thresh(requested_bits);
-	} else if (lrng_fully_seeded(state->all_online_numa_node_seeded, eb)) {
+	} else if (lrng_fully_seeded(eb)) {
 		if (state->can_invalidate)
 			invalidate_batched_entropy();
 
