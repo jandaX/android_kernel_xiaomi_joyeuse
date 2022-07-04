@@ -49,13 +49,6 @@ static struct lrng_drng lrng_drng_atomic = {
 	.hash_lock	= __RW_LOCK_UNLOCKED(lrng_drng_atomic.hash_lock)
 };
 
-static u32 max_wo_reseed = LRNG_DRNG_MAX_WITHOUT_RESEED;
-#ifdef CONFIG_LRNG_RUNTIME_MAX_WO_RESEED_CONFIG
-module_param(max_wo_reseed, uint, 0444);
-MODULE_PARM_DESC(max_wo_reseed,
-		 "Maximum number of DRNG generate operation withtout full reseed\n");
-#endif
-
 /********************************** Helper ************************************/
 
 bool lrng_get_available(void)
@@ -335,7 +328,7 @@ static int lrng_drng_get(struct lrng_drng *drng, u8 *outbuf, u32 outbuflen)
 	/* If DRNG operated without proper reseed for too long, block LRNG */
 	BUILD_BUG_ON(LRNG_DRNG_MAX_WITHOUT_RESEED < LRNG_DRNG_RESEED_THRESH);
 	if (atomic_read_u32(&drng->requests_since_fully_seeded) >
-		            max_wo_reseed) {
+		            LRNG_DRNG_MAX_WITHOUT_RESEED) {
 		drng->fully_seeded = false;
 		lrng_pool_all_numa_nodes_seeded(false);
 
