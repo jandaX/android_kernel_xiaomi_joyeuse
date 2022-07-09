@@ -2181,11 +2181,6 @@ static ssize_t incfs_listxattr(struct dentry *d, char *list, size_t size)
 	return vfs_listxattr(di->backing_path.dentry, list, size);
 }
 
-static int incfs_test_super(struct super_block *s, void *p)
-{
-	return s->s_fs_info != NULL;
-}
-
 struct dentry *incfs_mount_fs(struct file_system_type *type, int flags,
 			      const char *dev_name, void *data)
 {
