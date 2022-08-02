@@ -565,12 +565,6 @@ static void __f2fs_submit_read_bio(struct f2fs_sb_info *sbi,
 	__submit_bio(sbi, bio, type);
 }
 
-void f2fs_submit_bio(struct f2fs_sb_info *sbi,
-				struct bio *bio, enum page_type type)
-{
-	__submit_bio(sbi, bio, type);
-}
-
 static void __submit_merged_bio(struct f2fs_bio_info *io)
 {
 	struct f2fs_io_info *fio = &io->fio;
@@ -622,6 +616,34 @@ static bool __has_merged_page(struct bio *bio, struct inode *inode,
 	}
 
 	return false;
+}
+
+int f2fs_init_write_merge_io(struct f2fs_sb_info *sbi)
+{
+	int i;
+
+	for (i = 0; i < NR_PAGE_TYPE; i++) {
+		int n = (i == META) ? 1 : NR_TEMP_TYPE;
+		int j;
+
+		sbi->write_io[i] = f2fs_kmalloc(sbi,
+				array_size(n, sizeof(struct f2fs_bio_info)),
+				GFP_KERNEL);
+		if (!sbi->write_io[i])
+			return -ENOMEM;
+
+		for (j = HOT; j < n; j++) {
+			init_f2fs_rwsem(&sbi->write_io[i][j].io_rwsem);
+			sbi->write_io[i][j].sbi = sbi;
+			sbi->write_io[i][j].bio = NULL;
+			spin_lock_init(&sbi->write_io[i][j].io_lock);
+			INIT_LIST_HEAD(&sbi->write_io[i][j].io_list);
+			INIT_LIST_HEAD(&sbi->write_io[i][j].bio_list);
+			init_f2fs_rwsem(&sbi->write_io[i][j].bio_list_lock);
+		}
+	}
+
+	return 0;
 }
 
 static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
@@ -1697,8 +1719,6 @@ sync_out:
 		 */
 		f2fs_wait_on_block_writeback_range(inode,
 						map->m_pblk, map->m_len);
-		invalidate_mapping_pages(META_MAPPING(sbi),
-						map->m_pblk, map->m_pblk);
 
 		if (map->m_multidev_dio) {
 			block_t blk_addr = map->m_pblk;
@@ -2837,6 +2857,7 @@ int f2fs_write_single_data_page(struct page *page, int *submitted,
 		.submitted = false,
 		.compr_blocks = compr_blocks,
 		.need_lock = LOCK_RETRY,
+		.post_read = f2fs_post_read_required(inode),
 		.io_type = io_type,
 		.io_wbc = wbc,
 		.bio = bio,
@@ -3516,12 +3537,11 @@ static int prepare_atomic_write_begin(struct f2fs_sb_info *sbi,
 	struct inode *cow_inode = F2FS_I(inode)->cow_inode;
 	pgoff_t index = page->index;
 	int err = 0;
-	block_t ori_blk_addr;
+	block_t ori_blk_addr = NULL_ADDR;
 
 	/* If pos is beyond the end of file, reserve a new block in COW inode */
 	if ((pos & PAGE_MASK) >= i_size_read(inode))
-		return __reserve_data_block(cow_inode, index, blk_addr,
-					node_changed);
+		goto reserve_block;
 
 	/* Look for the block in COW inode first */
 	err = __find_data_block(cow_inode, index, blk_addr);
@@ -3535,10 +3555,12 @@ static int prepare_atomic_write_begin(struct f2fs_sb_info *sbi,
 	if (err)
 		return err;
 
+reserve_block:
 	/* Finally, we should reserve a new block in COW inode for the update */
 	err = __reserve_data_block(cow_inode, index, blk_addr, node_changed);
 	if (err)
 		return err;
+	inc_atomic_write_cnt(inode);
 
 	if (ori_blk_addr != NULL_ADDR)
 		*blk_addr = ori_blk_addr;
