@@ -41,6 +41,7 @@ endif
 endif
 endif
 
+subdir-ccflags-y := $(call cc-disable-warning, array-parameter)
 
 # add configurations in WLAN_CFG_OVERRIDE
 ifneq ($(WLAN_CFG_OVERRIDE),)
