@@ -816,6 +816,7 @@ EXPORT_SYMBOL(blk_alloc_queue);
 int blk_queue_enter(struct request_queue *q, bool nowait)
 {
 	while (true) {
+		int ret;
 
 		if (percpu_ref_tryget_live(&q->q_usage_counter))
 			return 0;
@@ -832,11 +833,13 @@ int blk_queue_enter(struct request_queue *q, bool nowait)
 		 */
 		smp_rmb();
 
-		wait_event(q->mq_freeze_wq,
-			   !atomic_read(&q->mq_freeze_depth) ||
-			   blk_queue_dying(q));
+		ret = wait_event_interruptible(q->mq_freeze_wq,
+				!atomic_read(&q->mq_freeze_depth) ||
+				blk_queue_dying(q));
 		if (blk_queue_dying(q))
 			return -ENODEV;
+		if (ret)
+			return ret;
 	}
 }
 
