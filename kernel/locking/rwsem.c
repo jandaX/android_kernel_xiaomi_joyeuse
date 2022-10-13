@@ -1102,6 +1102,7 @@ rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 	enum writer_wait_state wstate;
 	struct rwsem_waiter waiter;
 	struct rw_semaphore *ret = sem;
+	int null_owner_retries;
 	DEFINE_WAKE_Q(wake_q);
 	bool is_first_waiter = false;
 
@@ -1166,7 +1167,7 @@ rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 wait:
 	/* wait until we successfully acquire the lock */
 	set_current_state(state);
-	for (;;) {
+	for (null_owner_retries = 0;;) {
 		if (rwsem_try_write_lock(sem, wstate)) {
 			/* rwsem_try_write_lock() implies ACQUIRE on success */
 			break;
@@ -1189,8 +1190,21 @@ wait:
 			owner_state = rwsem_spin_on_owner(sem);
 			preempt_enable();
 
-			if (owner_state == OWNER_NULL)
+			/*
+			 * owner is NULL doesn't guarantee the lock is free.
+			 * An incoming reader will temporarily increment the
+			 * reader count without changing owner and the
+			 * rwsem_try_write_lock() will fails if the reader
+			 * is not able to decrement it in time. Allow 8
+			 * trylock attempts when hitting a NULL owner before
+			 * going to sleep.
+			 */
+			if ((owner_state == OWNER_NULL) &&
+			    (null_owner_retries < 8)) {
+				null_owner_retries++;
 				goto trylock_again;
+			}
+			null_owner_retries = 0;
 		}
 
 		/* Block until there are no active lockers. */
