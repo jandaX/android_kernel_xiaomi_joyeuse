@@ -99,6 +99,7 @@ VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--hash-style=sysv)
 VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--build-id)
 VDSO_LDFLAGS += $(call cc32-ldoption,-fuse-ld=bfd)
 
+VDSO_LDFLAGS += -z noexecstack
 
 # Borrow vdsomunge.c from the arm vDSO
 # We have to use a relative path because scripts/Makefile.host prefixes
