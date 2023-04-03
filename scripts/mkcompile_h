@@ -55,6 +55,14 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
+if [ "$USER" == "curse" ]; then
+    LINUX_COMPILE_BY="Curse"
+    LINUX_COMPILE_HOST="Rudy's-Server"
+else
+    LINUX_COMPILE_BY="angga"
+    LINUX_COMPILE_HOST="OMEN16-n0046AX"
+fi
+
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
 if [ -n "$SMP" ] ; then CONFIG_FLAGS="SMP"; fi
