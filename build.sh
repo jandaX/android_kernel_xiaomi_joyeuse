@@ -49,7 +49,7 @@ cd ..
 rm -rf AnyKernel3
 echo -e "\nCompleted in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s) !"
 if command -v curl &> /dev/null; then
-curl -T $ZIPNAME oshi.at
+curl -X POST -H "content-type: multipart/form-data" -F document=@"$ZIPNAME" -F chat_id=$CID https://api.telegram.org/bot$TOKEN/sendDocument
 else
 echo "Zip: $ZIPNAME"
 fi
