@@ -137,3 +137,4 @@ out/
 # Ignore build.log
 build.log
 build.txt
+*.zip
