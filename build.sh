@@ -1,10 +1,7 @@
 export PATH="$HOME/clang-GengKapak/bin:$PATH"
 SECONDS=0
 KERNEL_DEFCONFIG=joyeuse_defconfig
-export ARCH=arm64
-export SUBARCH=arm64
-export KBUILD_COMPILER_STRING="$($HOME/clang-GengKapak/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
-ZIPNAME="JandaX-joyeuse-$(date '+%Y%m%d-%H_%M').zip"
+ZIPNAME="DeathRhythm-joyeuse-$(date '+%Y%m%d-%H%M').zip"
 
 if ! [ -d "$HOME/clang-GengKapak" ]; then
 echo "GengKapak clang not found! Cloning..."
@@ -40,7 +37,8 @@ fi
 
 if [ -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ -f "out/arch/arm64/boot/dtbo.img" ]; then
 echo -e "\nKernel compiled succesfully! Zipping up...\n"
-git clone -q https://github.com/AnggaR96s/AnyKernel3
+git clone -q https://github.com/AnggaR96s/AnyKernel3 -b 14
+git log --oneline -n10 > AnyKernel3/changelog
 cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3
 cp out/arch/arm64/boot/dtbo.img AnyKernel3
 cd AnyKernel3
