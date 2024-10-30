@@ -4359,7 +4359,6 @@ static int handle_pte_fault(struct vm_fault *vmf)
 		 */
 		vmf->pte = NULL;
 	} else {
-		/* See comment in pte_alloc_one_map() */
 		if (pmd_devmap_trans_unstable(vmf->pmd))
 			return 0;
 		/*
@@ -4641,11 +4640,10 @@ static int ___handle_speculative_fault(struct mm_struct *mm, unsigned long addre
 	pol = __get_vma_policy(vmf.vma, address);
 	if (!pol)
 		pol = get_task_policy(current);
-	if (!pol)
-		if (pol && pol->mode == MPOL_INTERLEAVE) {
-			trace_spf_vma_notsup(_RET_IP_, vmf.vma, address);
-			return VM_FAULT_RETRY;
-		}
+	if (pol && pol->mode == MPOL_INTERLEAVE) {
+		trace_spf_vma_notsup(_RET_IP_, vmf.vma, address);
+		return VM_FAULT_RETRY;
+	}
 #endif
 
 	/*
